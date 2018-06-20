@@ -8,8 +8,8 @@ import tempfile
 import urllib.request
 
 from lib import promote
-from lib.builder import WORKING_DIR
 
+WORKING_DIR = os.path.join(os.environ['TRAVIS_BUILD_DIR'], '../working')
 
 LATEST = '2.16'
 
