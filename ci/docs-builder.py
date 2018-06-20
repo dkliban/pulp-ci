@@ -7,7 +7,7 @@ from shutil import copyfile, rmtree
 import tempfile
 import urllib.request
 
-from lib import builder, promote
+from lib import promote
 from lib.builder import WORKING_DIR
 
 
@@ -48,6 +48,54 @@ def make_directory_with_rsync(remote_paths_list):
         rmtree(tempdir_path)
         os.chdir(cwd)
 
+def load_config(config_name):
+    # Get the config
+    config_file = os.path.join(os.path.dirname(__file__), '..',
+                               'config', 'releases', '%s.yaml' % config_name)
+    if not os.path.exists(config_file):
+        print("Error: %s not found. " % config_file)
+        sys.exit(1)
+    with open(config_file, 'r') as config_handle:
+        config = yaml.safe_load(config_handle)
+    return config
+
+
+def components(configuration):
+    return configuration['repositories']
+
+
+def ensure_dir(target_dir, clean=True):
+    """
+    Ensure that the directory specified exists and is empty.  By default this will delete
+    the directory if it already exists
+
+    :param target_dir: The directory to process
+    :type target_dir: str
+    :param clean: Whether or not the directory should be removed and recreated
+    :type clean: bool
+    """
+    if clean:
+        shutil.rmtree(target_dir, ignore_errors=True)
+    try:
+        os.makedirs(target_dir)
+    except OSError:
+        pass
+
+def clone_branch(component):
+    """
+    Clone a git repository component into the working dir.
+
+    Assumes the working dir has already been created and cleaned, if needed, before cloning.
+
+    Returns the directory into which the branch was cloned.
+    """
+    print("Cloning from github: %s" % component['git_url'])
+    # --branch will let you check out tags as a detached head
+    command = ['git', 'clone', component['git_url'], '--branch',
+               component['git_branch'], component['name']]
+    subprocess.call(command, cwd=WORKING_DIR)
+    return os.path.join(WORKING_DIR, component['name'])
+
 
 def main():
     # Parse the args
@@ -56,10 +104,10 @@ def main():
     opts = parser.parse_args()
     is_pulp3 = opts.release.startswith('3')
 
-    configuration = builder.load_config(opts.release)
+    configuration = load_config(opts.release)
 
     # Get platform build version
-    repo_list = builder.components(configuration)
+    repo_list = components(configuration)
     try:
         pulp_dict = list(filter(lambda x: x['name'] == 'pulp', repo_list))[0]
     except IndexError:
@@ -77,11 +125,11 @@ def main():
 
     x_y_version = '.'.join(version.split('.')[:2])
 
-    builder.ensure_dir(WORKING_DIR, clean=True)
+    ensure_dir(WORKING_DIR, clean=True)
 
     # use the version update scripts to check out git repos and ensure correct versions
     for component in repo_list:
-        builder.clone_branch(component)
+        clone_branch(component)
 
     # install any apidoc dependencies that exist for pulp 3 docs
     if is_pulp3:
@@ -92,7 +140,7 @@ def main():
                     subprocess.check_call(['pip', 'install', '-e', '.'], cwd=package_dir)
 
     plugins_dir = os.sep.join([WORKING_DIR, 'pulp', 'docs', 'plugins'])
-    builder.ensure_dir(plugins_dir, clean=False)
+    ensure_dir(plugins_dir, clean=False)
 
     for component in repo_list:
         if component['name'] == 'pulp':
